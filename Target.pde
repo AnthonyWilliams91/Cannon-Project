@@ -1,6 +1,7 @@
 class Target implements Comparable<Target> {
-  private int posX, posY, posZ, size = 5;
+  private int posX, posY, posZ, size = 10;
   private double distanceToCannon = 0;
+  private MiniMapTarget miniMapTarget;
 
   public Target(int posX, int posY) {
     this(posX, posY, 0);
@@ -35,8 +36,10 @@ class Target implements Comparable<Target> {
   public void drawTarget() {
     pushMatrix();
     fill(255, 0, 0);
-    translate(posX, posY, size);
-    box(size, size, size);
+    stroke(255);
+    translate(posX, posY, size / 2.0);
+    box(size);
+    noStroke();
     popMatrix();
   }
   
@@ -47,6 +50,22 @@ class Target implements Comparable<Target> {
   
   public double getDistanceToCannon(){
     return distanceToCannon; 
+  }
+  
+  public void setMiniMapTarget(MiniMapTarget target){
+     this.miniMapTarget = target;
+  }
+  
+  public MiniMapTarget getMiniMapTarget(){
+    return this.miniMapTarget; 
+  }
+  
+  public boolean containsProjectile(Projectile projectile){
+    float leftSide = posX - (size/2.0 + projectile.getRadius());
+    float rightSide = posX + (size/2.0 + projectile.getRadius());
+    float frontSide = posY - (size/2.0 + projectile.getRadius());
+    float backSide = posY + (size/2.0 + projectile.getRadius());
+     return !(projectile.getPosZ() > size || projectile.getPosX() < leftSide || projectile.getPosX() > rightSide || projectile.getPosY() < frontSide || projectile.getPosY() > backSide); 
   }
   
   public int compareTo(Target other){

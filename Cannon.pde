@@ -1,17 +1,20 @@
-import java.util.PriorityQueue;
+import java.util.*;
 
 class Cannon extends StationaryObject {
   private Barrel barrel = new Barrel();
   private Base base = new Base();
   private ArrayList<Projectile> projectiles;
-  private PriorityQueue<Target> targets;
-  private double velocity = 0;//16.666666667; //10 meters per second default
-  private final float gravityInCM = 981;
+  private double velocityCMPerFrame = 16.666666667; //10 meters per second default
+  private final float gravityInM = -9.807;
   private final int CENTIMETERS_PER_METER = 100;
-
+  private final int FRAME_RATE = 60;
+  private Target[] targets;
+  private int targetIterator = 0;
+  private boolean rapidFire = false;
+  private boolean bounce = false;
+  
   public Cannon() {
     projectiles = new ArrayList<Projectile>();
-    targets = new PriorityQueue<Target>();
   }
 
   public Cannon (Barrel barrel, Base base) {
@@ -22,55 +25,86 @@ class Cannon extends StationaryObject {
 
   public void drawCannon() {
     pushMatrix();
-    rotateZ(radians(getHorizontalAngle()));
+    rotateZ(radians((float)getHorizontalAngle()));
     this.update();
-    base.update();
-    base.drawBase();
+    drawBase();
     translate(0, 0, base.getHeight() + barrel.getRadius());
-    barrel.update();
-    barrel.drawBarrel();
+    drawBarrel();
+    if(rapidFire && frameCount % 5 == 0) fire();
     popMatrix();
     drawProjectiles();
-    drawTargets();
+  }
+
+  private void drawBase() {
+    base.update();
+    base.drawBase();
+  }
+
+  private void drawBarrel() {
+    barrel.update();
+    barrel.drawBarrel();
   }
 
   private void drawProjectiles() {
+    Queue<Target> hitTargets = new LinkedList<Target>();
     for (Projectile p : projectiles) {
       p.updateProjectile();
+      p.drawProjectile();
+      for(Target t : terrain.getTargets()) if(t.containsProjectile(p)) hitTargets.add(t);
     }
-  }
-
-  private void drawTargets() {
-    for (Target t : targets) {
-      pushMatrix();
-      translate(0, 0, -base.getHeight());
-      t.drawTarget();
-      popMatrix();
-    }
+    for(Target t : hitTargets) terrain.getTargets().remove(t);
   }
 
   public void fire() {
     Projectile projectile = new Projectile(cannon);
+    projectile.setBounce(bounce);
     projectile.fire();
     projectiles.add(projectile);
   }
-  
-  public void autoFireOne(){
-    if(targets.peek() == null) return;
-    Target currentTarget = targets.peek(); 
-    double horizontalAngle = Math.atan((float)currentTarget.getPosY() / (float)currentTarget.getPosX());
-    if(horizontalAngle < 0) horizontalAngle += PI;
-    double verticalAngle = Math.atan((float)((currentTarget.getDistanceToCannon() - 12) * gravityInCM) / (float)(Math.pow(CENTIMETERS_PER_METER * getVelocity(), 2)) * 2.0);
-    setHorizontalAngle(degrees((float)horizontalAngle));
-    barrel.setVerticalAngle(degrees((float)verticalAngle));
-    println(degrees((float)verticalAngle));
+
+  public void autoFireOne() {
+    if (targets == null || targets.length == 0 || targetIterator >= targets.length) return;
+    Target currentTarget = targets[targetIterator]; 
+    double distance = currentTarget.getDistanceToCannon() / CENTIMETERS_PER_METER;
+    double cannonHeightInMeters = cannon.getBase().getHeight() / 10.0;// The denominator should be (float)CENTIMETERS_PER_METER. Somewhere in my math is an error.
+    double firstTermInFormula = -Math.pow(getVelocity_metersPerSecond(), 2);
+    double secondTermInFormula = Math.sqrt(Math.pow(getVelocity_metersPerSecond(), 4) - Math.pow(gravityInM, 2) * Math.pow(distance, 2) - (2 * Math.pow(getVelocity_metersPerSecond(), 2) * cannonHeightInMeters * gravityInM));
+    double thirdTermInFormula = gravityInM * distance;
+    float horizontalAngle = (float)Math.atan((double)currentTarget.getPosY() / (float)currentTarget.getPosX());
+    float verticalAngle = (float)Math.atan((firstTermInFormula - secondTermInFormula) / thirdTermInFormula); 
+    if (horizontalAngle < 0) horizontalAngle += PI;
+    if(Float.isNaN(verticalAngle)) return;
+    targetIterator++;
+    setHorizontalAngle(degrees(horizontalAngle));
+    barrel.setVerticalAngle(degrees(verticalAngle));
     fire();
-    targets.poll();
   }
 
-  public void addTarget(Target target) {
-    target.setDistanceToCannon(Math.sqrt(Math.pow(target.getPosX(), 2) + Math.pow(target.getPosY(), 2)));
-    targets.add(target);
+  public void updateTargets(){
+    targets = new Target[terrain.getTargets().size()];
+    targets = terrain.getTargets().toArray(targets); 
+    Arrays.sort(targets);
+    targetIterator = 0;
+  }
+  
+  public void clearProjectiles(){
+    projectiles.clear(); 
+  }
+
+  public void clearTargets(){
+    targets = null; 
+  }
+  
+  public void setBounce(boolean bounce){
+    this.bounce = bounce; 
+  }
+  
+  public boolean getBounce(){
+    return this.bounce; 
+  }
+  
+  public void setRapidFire(boolean rapidFire){
+    this.rapidFire = rapidFire;
   }
 
   public void setBarrel(Barrel barrel) {
@@ -88,14 +122,32 @@ class Cannon extends StationaryObject {
   public Base getBase() {
     return base;
   }
-  
-  public void setVelocity(double velocity) {
+
+  public void setVelocity_cmPerSecond(double velocity) {
     if (velocity < 0) throw new IllegalArgumentException();
-    this.velocity = velocity;
+    this.velocityCMPerFrame = velocity / FRAME_RATE;
   }
 
-  public double getVelocity() {
-    return velocity;
+  public void setVelocity_metersPerSecond(double velocity) {
+    if (velocity < 0) return;
+    this.velocityCMPerFrame = (velocity * CENTIMETERS_PER_METER) / 60;
+  }
+  
+  public void setVelocity_cmPerFrame(double velocity){
+    if (velocity < 0) throw new IllegalArgumentException();
+     this.velocityCMPerFrame = velocity; 
+  }
+
+  public double getVelocity_cmPerSecond() {
+    return velocityCMPerFrame * FRAME_RATE;
+  }
+  
+  public double getVelocity_metersPerSecond(){
+    return (FRAME_RATE * velocityCMPerFrame) / CENTIMETERS_PER_METER;
+  }
+  
+  public double getVelocity_cmPerFrame(){
+    return velocityCMPerFrame; 
   }
 
   public void rotateCounterClockwise(boolean rotateCounterClockwise) {
